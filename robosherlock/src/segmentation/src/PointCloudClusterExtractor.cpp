@@ -170,9 +170,6 @@ private:
     rs::Scene scene = cas.getScene();
 
     pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(new pcl::PointCloud<pcl::Normal>);
-    pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients);
-    pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices());
-    pcl::PointIndices::Ptr prism_inliers(new pcl::PointIndices());
     cluster_indices.clear();
 
     cas.get(VIEW_CLOUD, *cloud_ptr);
@@ -188,34 +185,43 @@ private:
       return UIMA_ERR_ANNOTATOR_MISSING_INFO;
     }
 
-    plane_coefficients->values = planes[0].model();
-    plane_inliers->indices = planes[0].inliers();
+    for(auto &plane : planes) {
+      outInfo("Looping through planes");
+      pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients);
+      pcl::PointIndices::Ptr  plane_inliers(new pcl::PointIndices());
+      pcl::PointIndices::Ptr prism_inliers(new pcl::PointIndices());
 
-    if(plane_coefficients->values.empty())
-    {
-      outInfo("PLane COEFFICIENTS EMPTY");
-      outInfo(clock.getTime() << " ms.");
-      return UIMA_ERR_NONE;
-    }
-    outDebug("getting input data took : " << clock.getTime() - t << " ms.");
-    t = clock.getTime();
+      plane_coefficients->values = plane.model();
+      plane_inliers->indices = plane.inliers();
 
-    if(mode == EC)
-    {
-      cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
-      outDebug("cloud preprocessing took : " << clock.getTime() - t << " ms.");
+      if(plane_coefficients->values.empty())
+      {
+        outInfo("PLane COEFFICIENTS EMPTY");
+        outInfo(clock.getTime() << " ms.");
+        return UIMA_ERR_NONE;
+      }
+      outDebug("getting input data took : " << clock.getTime() - t << " ms.");
       t = clock.getTime();
-      pointCloudClustering(cloud_ptr, prism_inliers, cluster_indices);
+
+      if(mode == EC)
+      {
+        cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
+        outDebug("cloud preprocessing took : " << clock.getTime() - t << " ms.");
+        t = clock.getTime();
+        pointCloudClustering(cloud_ptr, prism_inliers, cluster_indices);
+      }
+      else if(mode == OEC)
+      {
+        organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
+      }
+      else if(mode == OEC_prism)
+      {
+        cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
+        organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
+      }
     }
-    else if(mode == OEC)
-    {
-      organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
-    }
-    else if(mode == OEC_prism)
-    {
-      cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
-      organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
-    }
+
+
     outDebug("euclidean clustering took : " << clock.getTime() - t << " ms.");
     t = clock.getTime();
 
