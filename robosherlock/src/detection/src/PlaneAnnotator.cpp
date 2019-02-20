@@ -68,6 +68,7 @@ private:
 
   // PCL
   pcl::PointIndices::Ptr plane_inliers;
+  std::vector<pcl::PointIndices::Ptr> multiple_inliers;
   pcl::PointCloud<pcl::PointXYZRGBA>::Ptr cloud;
   pcl::PointCloud<pcl::PointXYZRGBA>::Ptr display;
   std::vector<int> mapping_indices;
@@ -394,6 +395,7 @@ private:
 
     cloud = pcl::PointCloud<pcl::PointXYZRGBA>::Ptr(new pcl::PointCloud<pcl::PointXYZRGBA>());
     pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients);
+    std::vector<pcl::PointIndices::Ptr> planes;
 
     if(useNonNANCloud)
     {
@@ -411,22 +413,12 @@ private:
       outError("No PointCloud present;");
     }
 
-    std::vector<float> planeModel(4);
     if(process_cloud(plane_coefficients, cloud))
     {
+        std::vector<float> planeModel(4);
       foundPlane = true;
-        savePlane(plane_coefficients, planeModel);
-        cv::Mat mask;
-        cv::Rect roi;
-        getMask(*plane_inliers, cv::Size(cloud->width, cloud->height), mask, roi);
-
-        rs::Plane plane = rs::create<rs::Plane>(tcas);
-        plane.model(planeModel);
-        plane.inliers(plane_inliers->indices);
-        plane.roi(rs::conversion::to(tcas, roi));
-        plane.mask(rs::conversion::to(tcas, mask));
-        plane.source("RANSAC");
-        scene.annotations.append(plane);
+      savePlane(plane_coefficients, planeModel, tcas, scene);
+      planes.push_back(plane_inliers);
     }
     else
     {
@@ -434,28 +426,24 @@ private:
     }
 
     if(foundPlane && multiple_planes) {
-        const auto input_cloud = pcl::PointCloud<pcl::PointXYZRGBA>::Ptr(new pcl::PointCloud<pcl::PointXYZRGBA>(*(cloud.get())));
+        pcl::PointCloud<pcl::PointXYZRGBA>::Ptr input_cloud(cloud);
         while(foundPlane) {
-            pcl::ExtractIndices<pcl::PointXYZRGBA> extract;
-            extract.setInputCloud(input_cloud);
-            extract.setIndices(plane_inliers);
-            extract.setNegative(true);
-            extract.filter(*input_cloud);
+            // Filter out the latest plane_inliers
+            pcl::PointIndices::Ptr inliers = planes.back();
+            for(auto &i : inliers->indices) {
+                auto point = &input_cloud->points[i];
+                point->x = point->y = point->z = std::numeric_limits<float>::quiet_NaN();
+            }
 
             foundPlane = process_cloud(plane_coefficients, input_cloud);
-            savePlane(plane_coefficients, planeModel);
-            cv::Mat mask;
-            cv::Rect roi;
-            getMask(*plane_inliers, cv::Size(cloud->width, cloud->height), mask, roi);
-
-            rs::Plane plane = rs::create<rs::Plane>(tcas);
-            plane.model(planeModel);
-            plane.inliers(plane_inliers->indices);
-            plane.roi(rs::conversion::to(tcas, roi));
-            plane.mask(rs::conversion::to(tcas, mask));
-            plane.source("RANSAC");
-            scene.annotations.append(plane);
+            if(foundPlane) {
+                std::vector<float> planeModel(4);
+                savePlane(plane_coefficients, planeModel, tcas, scene);
+                planes.push_back(plane_inliers);
+            }
         }
+        multiple_inliers = planes;
+        outInfo("Number of planes: " << multiple_inliers.size());
         foundPlane = true;
     }
   }
@@ -579,7 +567,7 @@ private:
     return true;
   }
 
-  void savePlane(pcl::ModelCoefficients::Ptr plane_coefficients, std::vector<float> planeModel) {
+  void savePlane(pcl::ModelCoefficients::Ptr plane_coefficients, std::vector<float> planeModel, CAS &tcas, rs::Scene &scene) {
       if(plane_coefficients->values[3] < 0)
       {
           planeModel[0] = plane_coefficients->values[0];
@@ -616,6 +604,18 @@ private:
           temp->indices[i] = mapping_indices[plane_inliers->indices[i]];
       }
       plane_inliers.swap(temp);
+
+      cv::Mat mask;
+      cv::Rect roi;
+      getMask(*plane_inliers, cv::Size(cloud->width, cloud->height), mask, roi);
+
+      rs::Plane plane = rs::create<rs::Plane>(tcas);
+      plane.model(planeModel);
+      plane.inliers(plane_inliers->indices);
+      plane.roi(rs::conversion::to(tcas, roi));
+      plane.mask(rs::conversion::to(tcas, mask));
+      plane.source("RANSAC");
+      scene.annotations.append(plane);
   }
 
   void readCameraInfo(const sensor_msgs::CameraInfo &camInfo)
@@ -675,19 +675,23 @@ private:
     case PCL:
     case FILE:
     case MPS:
-      disp = cv::Mat::zeros(cloud->height, cloud->width, CV_8UC3);
-      #pragma omp parallel for
-      for(size_t i = 0; i < plane_inliers->indices.size(); ++i)
-      {
-        const size_t index = plane_inliers->indices[i];
-        const size_t r = index / disp.cols;
-        const size_t c = index % disp.cols;
-        const pcl::PointXYZRGBA &point = cloud->at(index);
-        disp.at<cv::Vec3b>(r, c) = cv::Vec3b(point.b, point.g, point.r);
-      }
+        disp = cv::Mat::zeros(cloud->height, cloud->width, CV_8UC3);
+        #pragma omp parallel for
+        for(size_t idx=0; idx < multiple_inliers.size(); idx++) {
+            cv::Vec3b color = cv::Vec3b(rand() % 255, rand() % 255, rand() % 255);
+            auto inliers = multiple_inliers[idx];
+            for (size_t i = 0; i < inliers->indices.size(); ++i) {
+                const size_t index = inliers->indices[i];
+                const size_t r = index / disp.cols;
+                const size_t c = index % disp.cols;
+                disp.at<cv::Vec3b>(r, c) = color;
+            }
+        }
       break;
     }
   }
+
+
 
   void fillVisualizerWithLock(pcl::visualization::PCLVisualizer &visualizer, const bool firstRun)
   {
@@ -706,9 +710,12 @@ private:
     case PCL:
       output.reset(new pcl::PointCloud<pcl::PointXYZRGBA>);
       ei.setInputCloud(cloud);
-      ei.setIndices(plane_inliers);
+      for(auto &inlier : multiple_inliers) {
+          ei.setIndices(inlier);
+          ei.filter(*output);
+          ei.setInputCloud(output);
+      }
       //      ei.setKeepOrganized(true);
-      ei.filter(*output);
       break;
     case MPS:
       output.reset(new pcl::PointCloud<pcl::PointXYZRGBA>);
