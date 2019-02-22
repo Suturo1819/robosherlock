@@ -187,6 +187,19 @@ private:
 
     for(auto &plane : planes) {
       outInfo("Looping through planes");
+      pcl::PointCloud<pcl::PointXYZRGBA>::Ptr filtered_cloud(cloud_ptr);
+      // Filter out other planes so they do not disturb the result
+      for(auto &other_plane : planes) {
+          if(&plane != &other_plane) {
+              pcl::ExtractIndices<pcl::PointXYZRGBA> extractor;
+              pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+              inliers->indices = other_plane.inliers();
+              extractor.setInputCloud(cloud_ptr);
+              extractor.setIndices(inliers);
+              extractor.filter(*filtered_cloud);
+          }
+      }
+
       pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients);
       pcl::PointIndices::Ptr  plane_inliers(new pcl::PointIndices());
       pcl::PointIndices::Ptr prism_inliers(new pcl::PointIndices());
@@ -205,19 +218,19 @@ private:
 
       if(mode == EC)
       {
-        cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
+        cloudPreProcessing(filtered_cloud, plane_coefficients, plane_inliers, prism_inliers);
         outDebug("cloud preprocessing took : " << clock.getTime() - t << " ms.");
         t = clock.getTime();
-        pointCloudClustering(cloud_ptr, prism_inliers, cluster_indices);
+        pointCloudClustering(filtered_cloud, prism_inliers, cluster_indices);
       }
       else if(mode == OEC)
       {
-        organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
+        organizedCloudClustering(filtered_cloud, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
       }
       else if(mode == OEC_prism)
       {
-        cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
-        organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
+        cloudPreProcessing(filtered_cloud, plane_coefficients, plane_inliers, prism_inliers);
+        organizedCloudClustering(filtered_cloud, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
       }
     }
 
