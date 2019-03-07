@@ -54,6 +54,7 @@ class RSAnalysisEngine
 {
 
 public:
+
   std::string name_;
   bool parallel_, useIdentityResolution_;
   std::vector<std::string> next_pipeline_order;
@@ -67,20 +68,17 @@ protected:
   std::vector<std::string> delegates_;
   std::map<std::string,rs::AnnotatorCapabilities> delegateCapabilities_;
 
-#ifdef WITH_JSON_PROLOG
-  std::shared_ptr<JsonPrologInterface> json_prolog_interface_;
-#endif
-
 public:
 
   RSAnalysisEngine();
 
   ~RSAnalysisEngine();
 
+  std::map<std::string, rs::AnnotatorCapabilities> getDelegateCapabilities();
   void init(const std::string &file, bool parallel = false,
             bool pervasive = false, std::vector<std::string> contPipeline = {});
 
-  std::string convertYamlToXML(std::string);
+  std::string convertAnnotatorYamlToXML(std::string);
 
   void stop();
 
@@ -88,6 +86,19 @@ public:
 
   void process(std::vector<std::string> &designator_response,
                std::string query);
+
+
+  void getFixedFlow(const std::string filePath, std::vector<std::string> &annotators);
+
+  //draw results on an image
+  template <class T>
+  bool drawResulstOnImage(const std::vector<bool> &filter, const std::vector<std::string> &resultDesignators,
+                          std::string &requestJson, cv::Mat &resImage);
+
+  template <class T>
+  bool highlightResultsInCloud(const std::vector<bool> &filter, const std::vector<std::string> &resultDesignators,
+                               std::string &requestJson, pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud);
+
 
   uima::TyErrorId parallelProcess(uima::CAS &cas)
   {
@@ -189,7 +200,6 @@ public:
     return name_;
   }
 
-
   bool defaultPipelineEnabled()
   {
     if(engine_) {
@@ -241,21 +251,5 @@ public:
     uima::AnnotatorContext *cr_context =  annotContext.getDelegate(ucs_delegate);
     cr_context->assignValue(UnicodeString(paramName.c_str()), conversionString);
   }
-
-  void getFixedFlow(const std::string filePath,
-                    std::vector<std::string> &annotators);
-
-  //draw results on an image
-  template <class T>
-  bool drawResulstOnImage(const std::vector<bool> &filter,
-                          const std::vector<std::string> &resultDesignators,
-                          std::string &requestJson,
-                          cv::Mat &resImage);
-
-  template <class T>
-  bool highlightResultsInCloud(const std::vector<bool> &filter,
-                               const std::vector<std::string> &resultDesignators,
-                               std::string &requestJson,
-                               pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud);
 };
 #endif // RSANALYSISENGINE_H
