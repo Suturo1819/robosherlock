@@ -84,6 +84,7 @@ private:
   bool foundPlane, saveToFile;
   cv::Mat image_;
   double pointSize;
+  std::vector<cv::Vec3b> colors;
 
   //params
   int min_plane_inliers,
@@ -93,7 +94,8 @@ private:
         angular_threshold_deg;
 
   std::string pathToModelFile;
-  bool multiple_planes;
+  int max_planes;
+  bool horizontal;
 
 public:
   PlaneAnnotator() : DrawingAnnotator(__func__), mode(BOARD), display(new pcl::PointCloud<pcl::PointXYZRGBA>()),
@@ -156,12 +158,18 @@ public:
       {
           ctx.extractValue("save_to_file", saveToFile);
       }
-      if(ctx.isParameterDefined("multiple_planes"))
+      if(ctx.isParameterDefined("max_planes"))
       {
-          ctx.extractValue("multiple_planes", multiple_planes);
+          ctx.extractValue("max_planes", max_planes);
+      } else {
+          max_planes = 1;
+      }
+      if(ctx.isParameterDefined("horizontal"))
+      {
+          ctx.extractValue("horizontal", horizontal);
       }
 
-
+    get_plane_colors();
     return UIMA_ERR_NONE;
   }
   
@@ -413,39 +421,31 @@ private:
       outError("No PointCloud present;");
     }
 
-    if(process_cloud(plane_coefficients, cloud))
-    {
-        std::vector<float> planeModel(4);
-      foundPlane = true;
-      savePlane(plane_coefficients, planeModel, tcas, scene);
-      planes.push_back(plane_inliers);
-    }
-    else
-    {
-      outInfo("No plane found in the cloud");
-    }
+    int found_planes = 0;
+    pcl::PointCloud<pcl::PointXYZRGBA>::Ptr input_cloud(cloud);
+    while(found_planes < max_planes) {
+        foundPlane = process_cloud(plane_coefficients, input_cloud);
+        if(foundPlane) {
+            found_planes++;
+            std::vector<float> planeModel(4);
+            savePlane(plane_coefficients, planeModel, tcas, scene);
+            planes.push_back(plane_inliers);
 
-    if(foundPlane && multiple_planes) {
-        pcl::PointCloud<pcl::PointXYZRGBA>::Ptr input_cloud(cloud);
-        while(foundPlane) {
             // Filter out the latest plane_inliers
             pcl::PointIndices::Ptr inliers = planes.back();
             for(auto &i : inliers->indices) {
                 auto point = &input_cloud->points[i];
                 point->x = point->y = point->z = std::numeric_limits<float>::quiet_NaN();
             }
-
-            foundPlane = process_cloud(plane_coefficients, input_cloud);
-            if(foundPlane) {
-                std::vector<float> planeModel(4);
-                savePlane(plane_coefficients, planeModel, tcas, scene);
-                planes.push_back(plane_inliers);
-            }
+        } else {
+            outWarn("No further planes were found");
+            break;
         }
-        multiple_inliers = planes;
-        outInfo("Number of planes: " << multiple_inliers.size());
-        foundPlane = true;
     }
+    multiple_inliers = planes;
+    outInfo("Number of planes: " << multiple_inliers.size());
+    foundPlane = found_planes > 0;
+
   }
 
   void loadPlaneModel(CAS &tcas, rs::Scene &scene)
@@ -640,6 +640,14 @@ private:
     }
   }
 
+  void get_plane_colors() {
+      colors = std::vector<cv::Vec3b>();
+      for(int i=0; i<max_planes; i++) {
+          cv::Vec3b color = cv::Vec3b(rand() % 255, rand() % 255, rand() % 255);
+          colors.push_back(color);
+      }
+  }
+
   void drawImageWithLock(cv::Mat &disp)
   {
     if(!foundPlane)
@@ -678,7 +686,7 @@ private:
         disp = cv::Mat::zeros(cloud->height, cloud->width, CV_8UC3);
         #pragma omp parallel for
         for(size_t idx=0; idx < multiple_inliers.size(); idx++) {
-            cv::Vec3b color = cv::Vec3b(rand() % 255, rand() % 255, rand() % 255);
+            cv::Vec3b color = colors[idx % colors.size()];
             auto inliers = multiple_inliers[idx];
             for (size_t i = 0; i < inliers->indices.size(); ++i) {
                 const size_t index = inliers->indices[i];
