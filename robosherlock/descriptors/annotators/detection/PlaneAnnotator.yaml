@@ -11,7 +11,7 @@ parameters:
   distance_threshold: 0.02
   angular_threshold_deg: 5.0
   max_planes: 1
-  horizontal_planes: false
+  horizontal: false
 
 capabilities:
   inputs: ['rs.pcl.FilteredPointCloud']

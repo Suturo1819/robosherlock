@@ -31,6 +31,9 @@
 #include <pcl/segmentation/organized_multi_plane_segmentation.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
+#include <tf/tf.h>
+#include <tf_conversions/tf_eigen.h>
+#include <tf/transform_listener.h>
 
 // RS
 #include <rs/scene_cas.h>
@@ -72,6 +75,8 @@ private:
   pcl::PointCloud<pcl::PointXYZRGBA>::Ptr cloud;
   pcl::PointCloud<pcl::PointXYZRGBA>::Ptr display;
   std::vector<int> mapping_indices;
+
+  tf::TransformListener transformListener;
 
   bool useNonNANCloud;
 
@@ -567,7 +572,7 @@ private:
     return true;
   }
 
-  void savePlane(pcl::ModelCoefficients::Ptr plane_coefficients, std::vector<float> planeModel, CAS &tcas, rs::Scene &scene) {
+  void savePlane(const pcl::ModelCoefficients::Ptr &plane_coefficients, std::vector<float> planeModel, CAS &tcas, rs::Scene &scene) {
       if(plane_coefficients->values[3] < 0)
       {
           planeModel[0] = plane_coefficients->values[0];
@@ -609,13 +614,27 @@ private:
       cv::Rect roi;
       getMask(*plane_inliers, cv::Size(cloud->width, cloud->height), mask, roi);
 
-      rs::Plane plane = rs::create<rs::Plane>(tcas);
-      plane.model(planeModel);
-      plane.inliers(plane_inliers->indices);
-      plane.roi(rs::conversion::to(tcas, roi));
-      plane.mask(rs::conversion::to(tcas, mask));
-      plane.source("RANSAC");
-      scene.annotations.append(plane);
+      bool add_plane = true;
+      if(horizontal) {
+          outInfo("Plane frame " << plane_coefficients->header.frame_id);
+        // Transform plane to base frame
+          /*tf::StampedTransform transform;
+          transformListener.lookupTransform("base_footprint", plane_coefficients->header.frame_id, ros::Time(0), transform);
+          Eigen::Affine3d eigenTransform = Eigen::Affine3d::Identity ();
+          tf::transformTFToEigen(transform, eigenTransform);
+          pcl::ModelCoefficients::Ptr base_coefficients(new pcl::ModelCoefficients());
+          pcl::transformPlane(plane_coefficients, base_coefficients, eigenTransform);*/
+          add_plane = plane_coefficients->values[0] > 0.8;
+      }
+      if(add_plane) {
+          rs::Plane plane = rs::create<rs::Plane>(tcas);
+          plane.model(planeModel);
+          plane.inliers(plane_inliers->indices);
+          plane.roi(rs::conversion::to(tcas, roi));
+          plane.mask(rs::conversion::to(tcas, mask));
+          plane.source("RANSAC");
+          scene.annotations.append(plane);
+      }
   }
 
   void readCameraInfo(const sensor_msgs::CameraInfo &camInfo)
