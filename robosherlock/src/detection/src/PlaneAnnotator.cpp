@@ -466,32 +466,34 @@ private:
   }
 
   void estimateFromRegions(CAS &tcas, rs::Scene &scene) {
+      outInfo("Estimating plane form given by the regions defined by semantic_map.yaml");
+      rs::SceneCas cas(tcas);
+      cloud = pcl::PointCloud<pcl::PointXYZRGBA>::Ptr(new pcl::PointCloud<pcl::PointXYZRGBA>());
+      cas.get(VIEW_CLOUD, *cloud);
+      std::vector<pcl::PointIndices::Ptr> planes;
+
       std::vector<rs::Region> regions;
       scene.annotations.filter(regions);
       for(auto region : regions) {
-          plane_inliers = pcl::PointIndices::Ptr(new pcl::PointIndices);
-          pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients);
-          pcl::SACSegmentation<pcl::PointXYZRGBA> plane_segmentation;
-          pcl::IndicesPtr indices(new std::vector<int>());
-          getRegionIndices(region, scene, indices);
-          plane_segmentation.setIndices(indices);
-          plane_segmentation.segment(*plane_inliers, *plane_coefficients);
-
-          if(plane_inliers->indices.size() < min_plane_inliers) {
-              outWarn("not enough inliers!");
-              foundPlane = false;
-          }
-          std::sort(plane_inliers->indices.begin(), plane_inliers->indices.end());
-          foundPlane = plane_inliers->indices.size() < min_plane_inliers;
-          if(foundPlane) {
-              std::vector<float> planeModel(4);
-              savePlane(plane_coefficients, planeModel, tcas, scene);
+          if(region.transform().translation().empty()) {
+              outWarn("No position information for region");
+          } else {
+              pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients);
+              pcl::PointCloud<pcl::PointXYZRGBA>::Ptr regionCloud = pcl::PointCloud<pcl::PointXYZRGBA>::Ptr(cloud);
+              getRegionCloud(region, scene, regionCloud);
+              if(process_cloud(plane_coefficients, regionCloud)) {
+                  foundPlane = true;
+                  std::vector<float> planeModel(4);
+                  savePlane(plane_coefficients, planeModel, tcas, scene);
+                  planes.push_back(plane_inliers);
+              }
           }
 
       }
+      multiple_inliers = planes;
   }
 
-  void getRegionIndices(rs::Region region, rs::Scene &scene, pcl::IndicesPtr &indices) {
+  void getRegionCloud(rs::Region &region, rs::Scene &scene, pcl::PointCloud<pcl::PointXYZRGBA>::Ptr &regionCloud) {
       // Get bounding box of region
       const float minX = -(region.width() / 2);
       const float maxX = (region.width() / 2);
@@ -509,26 +511,33 @@ private:
           outWarn("No camera to world transformation, no further processing!");
           throw rs::FrameFilterException();
       }
-      tf::Transform regionTransform;
-      regionTransform.setOrigin(tf::Vector3(region.transform().translation()[0], region.transform().translation()[1],
-              region.transform().translation()[2]));
-      regionTransform.setRotation(tf::Quaternion(region.transform().rotation()[0], region.transform().rotation()[1],
-              region.transform().rotation()[2], region.transform().rotation()[3]));
+      tf::Transform regionTransform = tf::Transform();
+      tf::Vector3 translation (region.transform().translation.get(0),
+                              region.transform().translation.get(1),
+                              region.transform().translation.get(2));
+      outInfo("Region origin: " << translation.x() <<","<< translation.y() <<","<< translation.z());
+      regionTransform.setOrigin(translation);
+      regionTransform.setRotation(tf::Quaternion(region.transform().rotation.get(0), region.transform().rotation.get(1),
+             region.transform().rotation.get(2), region.transform().rotation.get(3)));
       tf::Transform transform;
-      transform = regionTransform * camToWorld;
+      transform = regionTransform.inverse() * camToWorld;
       Eigen::Affine3d eigenTransform;
       tf::transformTFToEigen(transform, eigenTransform);
       pcl::PointCloud<pcl::PointXYZRGBA>::Ptr transformed(new pcl::PointCloud<pcl::PointXYZRGBA>());
       pcl::transformPointCloud<pcl::PointXYZRGBA>(*cloud, *transformed, eigenTransform);
 
-      // Add indices for this region
+      // Create Point Cloud from region
       for(size_t i = 0; i < transformed->points.size(); ++i)
       {
           const pcl::PointXYZRGBA &p = transformed->points[i];
-          if(p.x > minX && p.x < maxX && p.y > minY && p.y < maxY && p.z > minZ && p.z < maxZ)
+          if(p.x < minX || p.x > maxX || p.y < minY || p.y > maxY || p.z < minZ || p.z > maxZ)
           {
-              indices->push_back(i);
+              auto point = &regionCloud->points[i];
+              point->x = point->y = point->z = std::numeric_limits<float>::quiet_NaN();
           }
+      }
+      if(regionCloud->size() > 0) {
+          outInfo("cloud is not empty");
       }
   }
 
@@ -612,13 +621,17 @@ private:
     // find the major plane
     pcl::SACSegmentation<pcl::PointXYZRGBA> plane_segmentation;
 
-    plane_segmentation.setOptimizeCoefficients(true);
-    plane_segmentation.setModelType(pcl::SACMODEL_PLANE);
-    plane_segmentation.setMethodType(pcl::SAC_RANSAC);
-    plane_segmentation.setDistanceThreshold(distance_threshold);
-    plane_segmentation.setMaxIterations(max_iterations);
-    plane_segmentation.setInputCloud(cloud_filtered_no_nan);
-    plane_segmentation.segment(*plane_inliers, *plane_coefficients);
+    if(cloud_filtered_no_nan->size() > 0) {
+        plane_segmentation.setOptimizeCoefficients(true);
+        plane_segmentation.setModelType(pcl::SACMODEL_PLANE);
+        plane_segmentation.setMethodType(pcl::SAC_RANSAC);
+        plane_segmentation.setDistanceThreshold(distance_threshold);
+        plane_segmentation.setMaxIterations(max_iterations);
+        plane_segmentation.setInputCloud(cloud_filtered_no_nan);
+        plane_segmentation.segment(*plane_inliers, *plane_coefficients);
+    } else {
+        outWarn("Point Cloud is empty!");
+    }
 
     if(plane_inliers->indices.size() < min_plane_inliers)
     {
@@ -702,8 +715,8 @@ private:
           Eigen::Affine3d eigenTransform = Eigen::Affine3d::Identity ();
           tf::transformTFToEigen(transform, eigenTransform);
           pcl::ModelCoefficients::Ptr base_coefficients(new pcl::ModelCoefficients());
-          pcl::transformPlane(plane_coefficients, base_coefficients, eigenTransform);*/
-          add_plane = plane_coefficients->values[1] > 0.8;
+          pcl::transformPlane(plane_coefficients, base_coefficients, eigenTransform);
+          add_plane = plane_coefficients->values[1] > 0.8;*/
       }
       if(add_plane) {
           rs::Plane plane = rs::create<rs::Plane>(tcas);
@@ -778,6 +791,7 @@ private:
       cv::line(disp, pointsImage[0], pointsImage[2], CV_RGB(0, 255, 0), 2, CV_AA);
       cv::line(disp, pointsImage[0], pointsImage[3], CV_RGB(0, 0, 255), 2, CV_AA);
       break;
+    case REGIONS:
     case PCL:
     case FILE:
     case MPS:
@@ -813,6 +827,7 @@ private:
       output = cloud;
       break;
     case FILE:
+    case REGIONS:
     case PCL:
       output.reset(new pcl::PointCloud<pcl::PointXYZRGBA>);
       ei.setInputCloud(cloud);

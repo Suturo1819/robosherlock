@@ -82,6 +82,7 @@ class RegionFilter : public DrawingAnnotator
   double frustum[24];
 
   bool annotate;
+  std::string frame;
 
 public:
 
@@ -140,6 +141,10 @@ public:
     {
       ctx.extractValue("annotate", annotate);
     }
+      if(ctx.isParameterDefined("frame"))
+      {
+          ctx.extractValue("frame", frame);
+      }
     return UIMA_ERR_NONE;
   }
 
@@ -501,15 +506,20 @@ private:
     regionAnn.depth.set(region.depth);
 
     rs::StampedTransform stampedTransform = rs::create<rs::StampedTransform>(tcas);
-    stampedTransform.translation.set(std::vector<double>());
-    stampedTransform.translation().push_back(region.transform.getOrigin().x());
-    stampedTransform.translation().push_back(region.transform.getOrigin().y());
-    stampedTransform.translation().push_back(region.transform.getOrigin().z());
-    stampedTransform.rotation.set(std::vector<double>());
-    stampedTransform.rotation().push_back(region.transform.getRotation().x());
-    stampedTransform.rotation().push_back(region.transform.getRotation().y());
-    stampedTransform.rotation().push_back(region.transform.getRotation().z());
-    stampedTransform.rotation().push_back(region.transform.getRotation().w());
+    stampedTransform.frame.set(frame);
+
+    std::vector<double> translation = std::vector<double>();
+    translation.push_back(region.transform.getOrigin().x());
+    translation.push_back(region.transform.getOrigin().y());
+    translation.push_back(region.transform.getOrigin().z());
+    stampedTransform.translation.set(translation);
+
+    std::vector<double> rotation = std::vector<double>();
+    rotation.push_back(region.transform.getRotation().x());
+    rotation.push_back(region.transform.getRotation().y());
+    rotation.push_back(region.transform.getRotation().z());
+    rotation.push_back(region.transform.getRotation().w());
+    stampedTransform.rotation.set(rotation);
 
     regionAnn.transform.set(stampedTransform);
     scene.annotations.append(regionAnn);
