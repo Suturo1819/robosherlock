@@ -187,7 +187,7 @@ private:
 
     for(auto &plane : planes) {
       outInfo("Looping through planes");
-      pcl::PointCloud<pcl::PointXYZRGBA>::Ptr filtered_cloud(cloud_ptr);
+      /*pcl::PointCloud<pcl::PointXYZRGBA>::Ptr filtered_cloud(cloud_ptr);
       // Filter out other planes so they do not disturb the result
       for(auto &other_plane : planes) {
           if(&plane != &other_plane) {
@@ -198,7 +198,7 @@ private:
               extractor.setIndices(inliers);
               extractor.filter(*filtered_cloud);
           }
-      }
+      }*/
 
       pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients);
       pcl::PointIndices::Ptr  plane_inliers(new pcl::PointIndices());
@@ -218,19 +218,19 @@ private:
 
       if(mode == EC)
       {
-        cloudPreProcessing(filtered_cloud, plane_coefficients, plane_inliers, prism_inliers);
+        cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
         outDebug("cloud preprocessing took : " << clock.getTime() - t << " ms.");
         t = clock.getTime();
-        pointCloudClustering(filtered_cloud, prism_inliers, cluster_indices);
+        pointCloudClustering(cloud_ptr, prism_inliers, cluster_indices);
       }
       else if(mode == OEC)
       {
-        organizedCloudClustering(filtered_cloud, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
+        organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
       }
       else if(mode == OEC_prism)
       {
-        cloudPreProcessing(filtered_cloud, plane_coefficients, plane_inliers, prism_inliers);
-        organizedCloudClustering(filtered_cloud, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
+        cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
+        organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
       }
     }
 

@@ -18,3 +18,4 @@ parameters:
   enable_frustum_culling: false 
   global_threshold: 0.12
   pixel_threshold: 0.15
+  annotate: false

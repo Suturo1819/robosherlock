@@ -21,6 +21,11 @@
 #include <uima/api.hpp>
 
 #include <opencv2/opencv.hpp>
+#include <pcl/point_types.h>
+#include <pcl/impl/point_types.hpp>
+#include <pcl/point_cloud.h>
+#include <pcl/common/transforms.h>
+#include <pcl/filters/extract_indices.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/segmentation/sac_segmentation.h>
@@ -29,8 +34,6 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/segmentation/organized_multi_plane_segmentation.h>
-#include <pcl/point_types.h>
-#include <pcl/point_cloud.h>
 #include <tf/tf.h>
 #include <tf_conversions/tf_eigen.h>
 #include <tf/transform_listener.h>
@@ -58,6 +61,7 @@ private:
     PCL,
     BOARD,
     MPS,
+    REGIONS,
     FILE
   } mode;
 
@@ -129,6 +133,10 @@ public:
           else if(sMode == "MPS")
           {
               mode = MPS;
+          }
+          else if(sMode == "REGIONS")
+          {
+              mode = REGIONS;
           }
           else if(sMode == "FILE")
           {
@@ -226,6 +234,10 @@ private:
       outInfo("Estimating form MPS");
       estimateFromMPS(tcas, scene);
       break;
+    case REGIONS:
+        outInfo("Estimating form from regions");
+        estimateFromRegions(tcas, scene);
+        break;
     case FILE:
       outInfo("Loading from File");
       loadPlaneModel(tcas, scene);
@@ -453,6 +465,73 @@ private:
 
   }
 
+  void estimateFromRegions(CAS &tcas, rs::Scene &scene) {
+      std::vector<rs::Region> regions;
+      scene.annotations.filter(regions);
+      for(auto region : regions) {
+          plane_inliers = pcl::PointIndices::Ptr(new pcl::PointIndices);
+          pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients);
+          pcl::SACSegmentation<pcl::PointXYZRGBA> plane_segmentation;
+          pcl::IndicesPtr indices(new std::vector<int>());
+          getRegionIndices(region, scene, indices);
+          plane_segmentation.setIndices(indices);
+          plane_segmentation.segment(*plane_inliers, *plane_coefficients);
+
+          if(plane_inliers->indices.size() < min_plane_inliers) {
+              outWarn("not enough inliers!");
+              foundPlane = false;
+          }
+          std::sort(plane_inliers->indices.begin(), plane_inliers->indices.end());
+          foundPlane = plane_inliers->indices.size() < min_plane_inliers;
+          if(foundPlane) {
+              std::vector<float> planeModel(4);
+              savePlane(plane_coefficients, planeModel, tcas, scene);
+          }
+
+      }
+  }
+
+  void getRegionIndices(rs::Region region, rs::Scene &scene, pcl::IndicesPtr &indices) {
+      // Get bounding box of region
+      const float minX = -(region.width() / 2);
+      const float maxX = (region.width() / 2);
+      float minY = -(region.height() / 2);
+      const float maxY = (region.height() / 2);
+      const float minZ = -(region.depth() / 2);
+      float maxZ = +(region.depth() / 2);
+
+      // Transform cloud to region space
+      tf::StampedTransform camToWorld;
+      camToWorld.setIdentity();
+      if(scene.viewPoint.has()) {
+          rs::conversion::from(scene.viewPoint.get(), camToWorld);
+      } else {
+          outWarn("No camera to world transformation, no further processing!");
+          throw rs::FrameFilterException();
+      }
+      tf::Transform regionTransform;
+      regionTransform.setOrigin(tf::Vector3(region.transform().translation()[0], region.transform().translation()[1],
+              region.transform().translation()[2]));
+      regionTransform.setRotation(tf::Quaternion(region.transform().rotation()[0], region.transform().rotation()[1],
+              region.transform().rotation()[2], region.transform().rotation()[3]));
+      tf::Transform transform;
+      transform = regionTransform * camToWorld;
+      Eigen::Affine3d eigenTransform;
+      tf::transformTFToEigen(transform, eigenTransform);
+      pcl::PointCloud<pcl::PointXYZRGBA>::Ptr transformed(new pcl::PointCloud<pcl::PointXYZRGBA>());
+      pcl::transformPointCloud<pcl::PointXYZRGBA>(*cloud, *transformed, eigenTransform);
+
+      // Add indices for this region
+      for(size_t i = 0; i < transformed->points.size(); ++i)
+      {
+          const pcl::PointXYZRGBA &p = transformed->points[i];
+          if(p.x > minX && p.x < maxX && p.y > minY && p.y < maxY && p.z > minZ && p.z < maxZ)
+          {
+              indices->push_back(i);
+          }
+      }
+  }
+
   void loadPlaneModel(CAS &tcas, rs::Scene &scene)
   {
     outInfo("loading plane from model file");
@@ -624,7 +703,7 @@ private:
           tf::transformTFToEigen(transform, eigenTransform);
           pcl::ModelCoefficients::Ptr base_coefficients(new pcl::ModelCoefficients());
           pcl::transformPlane(plane_coefficients, base_coefficients, eigenTransform);*/
-          add_plane = plane_coefficients->values[0] > 0.8;
+          add_plane = plane_coefficients->values[1] > 0.8;
       }
       if(add_plane) {
           rs::Plane plane = rs::create<rs::Plane>(tcas);

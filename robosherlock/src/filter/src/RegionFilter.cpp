@@ -81,6 +81,8 @@ class RegionFilter : public DrawingAnnotator
   pcl::visualization::Camera camera;
   double frustum[24];
 
+  bool annotate;
+
 public:
 
   RegionFilter() : DrawingAnnotator(__func__), pointSize(1), border(0.05), cloud(new pcl::PointCloud<PointT>()),
@@ -133,6 +135,10 @@ public:
       int tmp = 120;
       ctx.extractValue("change_timeout", tmp);
       timeout = tmp;
+    }
+    if(ctx.isParameterDefined("annotate"))
+    {
+      ctx.extractValue("annotate", annotate);
     }
     return UIMA_ERR_NONE;
   }
@@ -243,6 +249,9 @@ private:
       if(frustumCulling(regions[i]) || !frustumCulling_)
       {
         outInfo("region inside frustum: " << regions[i].name);
+        if(annotate) {
+          annotateRegion(regions[i], tcas, scene);
+        }
         filterRegion(regions[i]);
       }
       else
@@ -481,6 +490,29 @@ private:
         indices->push_back(i);
       }
     }
+  }
+
+  void annotateRegion(const Region &region, CAS &tcas, rs::Scene &scene) {
+    rs::Region regionAnn = rs::create<rs::Region>(tcas);
+    regionAnn.name.set(region.name);
+    regionAnn.type.set(region.type);
+    regionAnn.width.set(region.width);
+    regionAnn.height.set(region.height);
+    regionAnn.depth.set(region.depth);
+
+    rs::StampedTransform stampedTransform = rs::create<rs::StampedTransform>(tcas);
+    stampedTransform.translation.set(std::vector<double>());
+    stampedTransform.translation().push_back(region.transform.getOrigin().x());
+    stampedTransform.translation().push_back(region.transform.getOrigin().y());
+    stampedTransform.translation().push_back(region.transform.getOrigin().z());
+    stampedTransform.rotation.set(std::vector<double>());
+    stampedTransform.rotation().push_back(region.transform.getRotation().x());
+    stampedTransform.rotation().push_back(region.transform.getRotation().y());
+    stampedTransform.rotation().push_back(region.transform.getRotation().z());
+    stampedTransform.rotation().push_back(region.transform.getRotation().w());
+
+    regionAnn.transform.set(stampedTransform);
+    scene.annotations.append(regionAnn);
   }
 
   void drawImageWithLock(cv::Mat &disp)
