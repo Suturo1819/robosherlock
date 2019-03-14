@@ -29,6 +29,7 @@
 
 #include <tf_conversions/tf_eigen.h>
 #include <tf/tf.h>
+#include <tf/transform_listener.h>
 
 #include <rs/scene_cas.h>
 #include <rs/utils/time.h>
@@ -83,6 +84,7 @@ class RegionFilter : public DrawingAnnotator
 
   bool annotate;
   std::string frame;
+  tf::TransformListener transformListener;
 
 public:
 
