@@ -79,7 +79,6 @@ private:
   pcl::PointCloud<pcl::PointXYZRGBA>::Ptr display;
   std::vector<int> mapping_indices;
 
-  tf::TransformListener transformListener;
 
   bool useNonNANCloud;
 
@@ -430,7 +429,7 @@ private:
     }
 
     int found_planes = 0;
-    pcl::PointCloud<pcl::PointXYZRGBA>::Ptr input_cloud(cloud);
+    pcl::PointCloud<pcl::PointXYZRGBA>::Ptr input_cloud(new pcl::PointCloud<pcl::PointXYZRGBA>(*cloud));
     while(found_planes < max_planes) {
         foundPlane = process_cloud(plane_coefficients, input_cloud);
         if(foundPlane) {
@@ -724,6 +723,7 @@ private:
     pcl::ExtractIndices<pcl::PointXYZRGBA> ei;
     //    uint32_t colors[6] = {0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFF00, 0xFFFF00FF, 0xFF00FFFF};
     const pcl::PointCloud<pcl::PointXYZRGBA>::VectorType &origPoints = this->cloud->points;
+    pcl::PointIndices::Ptr all_indices(new pcl::PointIndices());
 
     pcl::PointCloud<pcl::PointXYZRGBA>::Ptr output;
     switch(mode)
@@ -736,11 +736,12 @@ private:
       output.reset(new pcl::PointCloud<pcl::PointXYZRGBA>);
       ei.setInputCloud(cloud);
       for(auto &inlier : multiple_inliers) {
-          ei.setIndices(inlier);
-          ei.filter(*output);
-          ei.setInputCloud(output);
+          for(auto &index : inlier->indices) {
+              all_indices->indices.push_back(index);
+          }
       }
-      //      ei.setKeepOrganized(true);
+      ei.setIndices(plane_inliers);
+      ei.filter(*output);
       break;
     case MPS:
       output.reset(new pcl::PointCloud<pcl::PointXYZRGBA>);
