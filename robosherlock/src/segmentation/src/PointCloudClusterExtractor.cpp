@@ -47,7 +47,6 @@
 #include <rs/utils/time.h>
 #include <rs/utils/output.h>
 #include <rs/utils/common.h>
-#include <tf_conversions/tf_eigen.h>
 
 //#define DEBUG_OUTPUT 1;
 using namespace uima;
@@ -171,6 +170,9 @@ private:
     rs::Scene scene = cas.getScene();
 
     pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(new pcl::PointCloud<pcl::Normal>);
+    pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients);
+    pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices());
+    pcl::PointIndices::Ptr prism_inliers(new pcl::PointIndices());
     cluster_indices.clear();
 
     cas.get(VIEW_CLOUD, *cloud_ptr);
@@ -181,55 +183,39 @@ private:
     scene.annotations.filter(planes);
     if(planes.empty())
     {
-        outInfo("NO PLANE COEFFICIENTS SET!! RUN A PLANE ESIMTATION BEFORE!!!");
-        outInfo(clock.getTime() << " ms.");
-        return UIMA_ERR_ANNOTATOR_MISSING_INFO;
+      outInfo("NO PLANE COEFFICIENTS SET!! RUN A PLANE ESIMTATION BEFORE!!!");
+      outInfo(clock.getTime() << " ms.");
+      return UIMA_ERR_ANNOTATOR_MISSING_INFO;
     }
 
+    plane_coefficients->values = planes[0].model();
+    plane_inliers->indices = planes[0].inliers();
 
-      pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients);
-      pcl::PointIndices::Ptr  plane_inliers(new pcl::PointIndices());
-      pcl::PointIndices::Ptr prism_inliers(new pcl::PointIndices());
-
-    for(auto &plane : planes) {
-        outInfo("Looping through planes");
-
-        for(auto i : plane.model()) {
-            plane_coefficients->values.push_back(i);
-        }
-        for(auto i : plane.inliers()) {
-            plane_inliers->indices.push_back(i);
-        }
+    if(plane_coefficients->values.empty())
+    {
+      outInfo("PLane COEFFICIENTS EMPTY");
+      outInfo(clock.getTime() << " ms.");
+      return UIMA_ERR_NONE;
     }
+    outDebug("getting input data took : " << clock.getTime() - t << " ms.");
+    t = clock.getTime();
 
-      if(plane_coefficients->values.empty())
-      {
-        outInfo("PLane COEFFICIENTS EMPTY");
-        outInfo(clock.getTime() << " ms.");
-        return UIMA_ERR_NONE;
-      }
-      outDebug("getting input data took : " << clock.getTime() - t << " ms.");
+    if(mode == EC)
+    {
+      cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
+      outDebug("cloud preprocessing took : " << clock.getTime() - t << " ms.");
       t = clock.getTime();
-
-      if(mode == EC)
-      {
-        cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
-        outDebug("cloud preprocessing took : " << clock.getTime() - t << " ms.");
-        t = clock.getTime();
-        pointCloudClustering(cloud_ptr, prism_inliers, cluster_indices);
-      }
-      else if(mode == OEC)
-      {
-        organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
-      }
-      else if(mode == OEC_prism)
-      {
-        cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
-        organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
-      }
-
-
-
+      pointCloudClustering(cloud_ptr, prism_inliers, cluster_indices);
+    }
+    else if(mode == OEC)
+    {
+      organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
+    }
+    else if(mode == OEC_prism)
+    {
+      cloudPreProcessing(cloud_ptr, plane_coefficients, plane_inliers, prism_inliers);
+      organizedCloudClustering(cloud_ptr, cloud_normals, plane_inliers, cluster_indices, prism_inliers);
+    }
     outDebug("euclidean clustering took : " << clock.getTime() - t << " ms.");
     t = clock.getTime();
 

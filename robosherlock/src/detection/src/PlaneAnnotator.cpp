@@ -620,7 +620,7 @@ private:
       cv::Rect roi;
       getMask(*plane_inliers, cv::Size(cloud->width, cloud->height), mask, roi);
 
-      if(!horizontal || plane_coefficients->values[1] > 0.8) {
+      if(!horizontal || planeModel[1] > 0.7) {
           rs::Plane plane = rs::create<rs::Plane>(tcas);
           plane.model(planeModel);
           plane.inliers(plane_inliers->indices);
