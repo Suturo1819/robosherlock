@@ -428,14 +428,13 @@ private:
       outError("No PointCloud present;");
     }
 
-    int found_planes = 0;
+    bool plane_safed = false;
     pcl::PointCloud<pcl::PointXYZRGBA>::Ptr input_cloud(new pcl::PointCloud<pcl::PointXYZRGBA>(*cloud));
-    while(found_planes < max_planes) {
+    while(!plane_safed) {
         foundPlane = process_cloud(plane_coefficients, input_cloud);
         if(foundPlane) {
-            found_planes++;
             std::vector<float> planeModel(4);
-            savePlane(plane_coefficients, planeModel, tcas, scene, planes);
+            plane_safed = savePlane(plane_coefficients, planeModel, tcas, scene, planes);
 
             // Filter out the latest plane_inliers
             pcl::PointIndices::Ptr inliers = plane_inliers;
@@ -449,8 +448,7 @@ private:
         }
     }
     multiple_inliers = planes;
-    outInfo("Number of planes: " << multiple_inliers.size());
-    foundPlane = found_planes > 0;
+    foundPlane = plane_safed;
 
   }
 
@@ -577,7 +575,7 @@ private:
     return true;
   }
 
-  void savePlane(const pcl::ModelCoefficients::Ptr &plane_coefficients, std::vector<float> planeModel, CAS &tcas, rs::Scene &scene, std::vector<pcl::PointIndices::Ptr> &planes) {
+  bool savePlane(const pcl::ModelCoefficients::Ptr &plane_coefficients, std::vector<float> planeModel, CAS &tcas, rs::Scene &scene, std::vector<pcl::PointIndices::Ptr> &planes) {
       if(plane_coefficients->values[3] < 0)
       {
           planeModel[0] = plane_coefficients->values[0];
@@ -628,8 +626,10 @@ private:
           plane.source("RANSAC");
           scene.annotations.append(plane);
           planes.push_back(plane_inliers);
+          return true;
       } else {
           outWarn("Plane was not horizontal");
+          return false;
       }
 
   }
