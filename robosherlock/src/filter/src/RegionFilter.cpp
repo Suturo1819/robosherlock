@@ -94,6 +94,16 @@ public:
   {
   }
 
+  void mask_default_regions(std::vector<std::string> mask) {
+    std::vector<std::string> new_regions = std::vector<std::string>();
+    for(auto region : defaultRegions) {
+      if(std::find(mask.begin(), mask.end(), region) != mask.end()) {
+        new_regions.emplace_back(region);
+      }
+    }
+    defaultRegions = new_regions;
+  }
+
   TyErrorId initialize(AnnotatorContext &ctx)
   {
     outInfo("initialize");

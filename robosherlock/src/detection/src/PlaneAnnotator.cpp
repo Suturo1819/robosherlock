@@ -428,13 +428,15 @@ private:
       outError("No PointCloud present;");
     }
 
-    bool plane_safed = false;
+    bool plane_saved = false;
+    int found_planes = 0;
     pcl::PointCloud<pcl::PointXYZRGBA>::Ptr input_cloud(new pcl::PointCloud<pcl::PointXYZRGBA>(*cloud));
-    while(!plane_safed) {
+    while(!plane_saved || found_planes < max_planes) {
         foundPlane = process_cloud(plane_coefficients, input_cloud);
         if(foundPlane) {
+            found_planes++;
             std::vector<float> planeModel(4);
-            plane_safed = savePlane(plane_coefficients, planeModel, tcas, scene, planes);
+            plane_saved = savePlane(plane_coefficients, planeModel, tcas, scene, planes);
 
             // Filter out the latest plane_inliers
             pcl::PointIndices::Ptr inliers = plane_inliers;
@@ -448,7 +450,7 @@ private:
         }
     }
     multiple_inliers = planes;
-    foundPlane = plane_safed;
+    foundPlane = found_planes > 0;
 
   }
 

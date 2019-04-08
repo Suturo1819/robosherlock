@@ -232,6 +232,10 @@ private:
     outDebug("conversion to image ROI took: " << clock.getTime() - t << " ms.");
     t = clock.getTime();
 
+
+    std::vector<rs::Region> regions = std::vector<rs::Region>();
+    scene.annotations.filter(regions);
+
     for(size_t i = 0; i < cluster_indices.size(); ++i)
     {
       Cluster &cluster = clusters[i];
@@ -253,11 +257,31 @@ private:
       uimaCluster.points.set(rcp);
       uimaCluster.rois.set(imageRoi);
       uimaCluster.source.set("EuclideanClustering");
+      uimaCluster.region.set(getRegion(regions, i));
       scene.identifiables.append(uimaCluster);
     }
     outDebug("adding clusters took: " << clock.getTime() - t << " ms.");
 
     return UIMA_ERR_NONE;
+  }
+
+  std::string getRegion(std::vector<rs::Region> regions, size_t cluster_idx) {
+      pcl::PointIndices indices = cluster_indices[cluster_idx];
+      pcl::CentroidPoint<pcl::PointXYZRGBA> centroid = pcl::CentroidPoint<pcl::PointXYZRGBA>();
+      for(int i=0; i<indices.indices.size(); i++) {
+          centroid.add(cloud_ptr->points[indices.indices[i]]);
+      }
+      pcl::PointXYZRGBA m = pcl::PointXYZRGBA();
+      centroid.get(m);
+      for(rs::Region &region : regions) {
+          double x = std::abs(region.transform().translation()[0] - m.x);
+          double y = std::abs(region.transform().translation()[1] - m.y);
+          double z = std::abs(region.transform().translation()[2] - m.z);
+          if(x < region.width()/2 && y < region.height()/2 && z < region.depth()/2) {
+              return region.name();
+          }
+      }
+      return "";
   }
 
   void drawImageWithLock(cv::Mat &disp)
