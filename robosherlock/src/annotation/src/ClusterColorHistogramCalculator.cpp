@@ -148,27 +148,28 @@ private:
     rs::Query qs = rs::create<rs::Query>(tcas);
     rapidjson::Document jsonDoc;
     std::string jsonQuery;
-    bool found = false;
-    if(cas.getFS("QUERY", qs) && qs.query() != "")
-    {
-      jsonQuery = qs.query();
-      jsonDoc.Parse(jsonQuery);
-      //TODO first level of json is currently only detect, needs to be done differently when there are
-      //multiple modes
-      rapidjson::Value &detectQuery = jsonDoc["detect"];
-      outWarn("json query: " << qs.query());
-      if(detectQuery.IsObject())
-      {
-        //TODO How do we know what keywords can be found at what level in the json?
-        rapidjson::Value::ConstMemberIterator colorMember = detectQuery.FindMember("color");
-        rapidjson::Value::ConstMemberIterator detectionMember = detectQuery.FindMember("detection");
-
-        if(colorMember != detectQuery.MemberEnd() || detectionMember != detectQuery.MemberEnd())
-        {
-          found = true;
-        }
-      }
-    }
+      bool found = true;
+//    bool found = false;
+//    if(cas.getFS("QUERY", qs) && qs.query() != "")
+//    {
+//      jsonQuery = qs.query();
+//      jsonDoc.Parse(jsonQuery);
+//      //TODO first level of json is currently only detect, needs to be done differently when there are
+//      //multiple modes
+//      rapidjson::Value &detectQuery = jsonDoc["detect"];
+//      outWarn("json query: " << qs.query());
+//      if(detectQuery.IsObject())
+//      {
+//        //TODO How do we know what keywords can be found at what level in the json?
+//        rapidjson::Value::ConstMemberIterator colorMember = detectQuery.FindMember("color");
+//        rapidjson::Value::ConstMemberIterator detectionMember = detectQuery.FindMember("detection");
+//
+//        if(colorMember != detectQuery.MemberEnd() || detectionMember != detectQuery.MemberEnd())
+//        {
+//          found = true;
+//        }
+//      }
+//    }
 
 
     scene.identifiables.filter(clusters);
@@ -218,6 +219,7 @@ private:
             colorAnnotation.color.set(color);
             colorAnnotation.ratio.set(ratio);
             clusters[idx].annotations.append(colorAnnotation);
+
           }
         }
       }
@@ -243,6 +245,7 @@ private:
       }
 
       rs::ColorHistogram color_hist_annotation = rs::create<rs::ColorHistogram>(tcas);
+
       color_hist_annotation.hist.set(rs::conversion::to(tcas, hist));
       outDebug("Conatiners for annotations created");
 
@@ -253,7 +256,7 @@ private:
 
   void countColors(const cv::Mat &hsv, const cv::Mat &mask, std::vector<int> &colorCount, size_t &sum) const
   {
-    assert(hsv.type() == CV_8UC3);
+      assert(hsv.type() == CV_8UC3);
 
     sum = 0;
     colorCount = std::vector<int>(COUNT, 0.0);
@@ -319,7 +322,9 @@ private:
           ++colorCount[GREY];
         }
       }
+
     }
+
   }
 
   void drawImageWithLock(cv::Mat &disp)
@@ -335,6 +340,7 @@ private:
 
       cv::rectangle(disp, roi, colors_[ids[0]]);
 
+
       cv::Mat hist = disp(roiHist);
 
       float start = 0;
@@ -346,6 +352,7 @@ private:
         cv::rectangle(hist, rect, colors_[ids[r]], CV_FILLED);
       }
     }
+
   }
 };
 
